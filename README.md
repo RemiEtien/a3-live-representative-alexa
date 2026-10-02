@@ -87,6 +87,12 @@ The simulator's "Alexa" is played by Gemini Flash with function calling; Alexa's
 
 Add `https://alexa.triplea.studio/mcp` as a custom connector (Claude: Settings → Connectors; ChatGPT: Developer mode → Create app, no auth). Ask: *"Find a laser hair removal clinic in Austin and let me talk to their representative."*
 
+## Running on AWS
+
+- **Public endpoint** (`alexa.triplea.studio`): Amazon EC2 Graviton (t4g) with an Elastic IP, Caddy for TLS in front of the Node server (`systemd` service), keys in an environment file outside the repository; the security group opens only HTTP/HTTPS publicly (HTTP redirects to HTTPS). Demo limits are set by environment (`PUBLIC_MODE`, `MAX_LIVE_SESSIONS`, `MAX_LIVE_SECONDS`, `SIM_*`, see `.env.example`).
+- **Live representatives**: the A³ platform renders each representative's video and voice on Amazon EC2 GPU instances (Spot, us-east-1) and streams it over WebRTC from a media server on the same fleet. `talk_to_representative` opens one such session.
+- **Fleet availability**: an AWS Lambda controller on an Amazon EventBridge schedule replaces reclaimed Spot instances, falls back to On-Demand, watches Spot prices, and alerts through Amazon SNS.
+
 ## What was built for this hackathon
 
 A³ (the avatar platform: real-time talking avatars, per-business setup, knowledge and booking) existed before the hackathon and is used here as a hosted service. Everything in this repository was built from October 1, 2026 for the Alexa+ track:
