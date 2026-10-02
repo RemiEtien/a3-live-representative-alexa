@@ -8,7 +8,7 @@ Big brands build their own MCP servers for Alexa+. Millions of local businesses 
 
 - **Live demo (no install):** https://alexa.triplea.studio/sim
 - **MCP endpoint (Streamable HTTP, spec 2025-11-25):** `https://alexa.triplea.studio/mcp`
-- **Demo video:** _link added after upload_
+- **Demo video (2:41):** https://youtu.be/ZM8FqtDVUEk
 
 > Alexa+ add-ons are partner-only today, so this repository ships a web simulator of an Echo Show with Alexa+. Every business action in the simulator (search, opening the representative, passing the user's words, reading the booking) is a real MCP tool call to this server, the way an Alexa+ add-on is called; the representative's video and voice then stream over WebRTC. The live conversation window was also tested as an MCP App in Claude and ChatGPT (October 1).
 
