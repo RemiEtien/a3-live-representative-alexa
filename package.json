@@ -1,0 +1,37 @@
+{
+  "name": "a3-live-representative-alexa",
+  "version": "1.0.0",
+  "scripts": {
+    "start": "tsx src/server.ts"
+  },
+  "keywords": [],
+  "author": "Konstantin Tikhaev",
+  "license": "MIT",
+  "description": "A³ Live Representative: every local business on A³, live on Alexa+ through one MCP server (MCP Apps + live video avatar).",
+  "dependencies": {
+    "@google/genai": "^1.52.0",
+    "@modelcontextprotocol/client": "^2.2.0",
+    "@modelcontextprotocol/express": "^2.0.0",
+    "@modelcontextprotocol/ext-apps": "^2.0.3",
+    "@modelcontextprotocol/node": "^2.0.0",
+    "@modelcontextprotocol/server": "^2.0.0",
+    "cors": "^2.8.6",
+    "esbuild": "^0.28.2",
+    "express": "^5.2.1",
+    "livekit-client": "^2.22.3",
+    "ws": "^8.22.0",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.6",
+    "@types/node": "^26.6.3",
+    "@types/ws": "^8.18.2",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  },
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  }
+}

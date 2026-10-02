@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nearby providers</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&display=swap">
+<style>
+  :root { --bg:#0d1320; --card:#151d2e; --card2:#18233a; --ink:#f3f6fb; --muted:#93a0b8; --live:#35e0a1; --line:#ffffff12; --price:#ffffff0f; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.4 Figtree, system-ui, sans-serif; padding:4px 2px 2px; }
+  .list { display:grid; gap:12px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:18px; padding:16px 18px; display:grid; grid-template-columns:auto 1fr; gap:4px 16px; align-items:center; }
+  .card.live { background:linear-gradient(135deg, var(--card2), var(--card)); border-color:#35e0a140; }
+  .photo { grid-row:span 3; width:76px; height:76px; border-radius:50%; overflow:hidden; background:#d9cfc3; position:relative; flex:none; box-shadow:0 0 0 3px #35e0a1, 0 0 0 7px #35e0a122; }
+  .photo img { width:100%; height:100%; object-fit:cover; object-position:50% 22%; transform:scale(1.9); transform-origin:50% 26%; }
+  .rank { grid-row:span 3; width:76px; height:76px; border-radius:50%; display:grid; place-items:center; background:#ffffff08; color:var(--muted); font-weight:600; font-size:22px; }
+  .top { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+  .name { font-weight:700; font-size:20px; letter-spacing:-.1px; }
+  .live-chip { display:inline-flex; align-items:center; gap:7px; font-size:13px; font-weight:600; color:#06140e; background:var(--live); border-radius:999px; padding:3px 10px 3px 8px; }
+  .live-chip::before { content:""; width:7px; height:7px; border-radius:50%; background:#06140e; animation:blink 1.6s infinite; }
+  @keyframes blink { 50% { opacity:.25; } }
+  .meta { color:var(--muted); font-size:14px; }
+  .meta b { color:var(--ink); font-weight:600; }
+  .svc { display:flex; flex-wrap:wrap; gap:6px; }
+  .svc span { font-size:14px; background:var(--price); border-radius:10px; padding:4px 10px; font-variant-numeric:tabular-nums; }
+  .svc span em { font-style:normal; font-weight:600; color:var(--ink); margin-left:4px; }
+  .empty { color:var(--muted); padding:8px; }
+  .foot { color:var(--muted); font-size:11px; padding:8px 4px 0; opacity:.7; }
+  @media (prefers-reduced-motion: reduce) { .live-chip::before { animation:none; } }
+</style>
+</head>
+<body>
+<div class="list" id="list"><div class="empty">Searching…</div></div>
+<div class="foot">Demo businesses, fictional.</div>
+<script>
+/*__LIB__*/
+</script>
+<script type="module">
+const list = document.getElementById("list");
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+function render(data) {
+  const ps = data?.providers || [];
+  if (!ps.length) { list.innerHTML = '<div class="empty">No providers found for this request.</div>'; return; }
+  list.innerHTML = ps.map((p, i) => `
+    <div class="card${p.live_rep ? " live" : ""}">
+      ${p.live_rep && p.rep_photo ? `<div class="photo"><img src="${esc(p.rep_photo)}" alt="${esc(p.rep_name)}"></div>` : `<div class="rank">${i + 1}</div>`}
+      <div class="top"><span class="name">${esc(p.name)}</span>${p.live_rep ? `<span class="live-chip">${esc(p.rep_name)} is live now</span>` : ""}</div>
+      <div class="meta"><b>★ ${p.rating}</b> (${p.reviews}) · <b>${p.distance_mi} mi</b> · ${esc(p.address.split(",")[0])} · ${esc(p.hours)}</div>
+      <div class="svc">${(p.matching_services || []).map((s) => `<span>${esc(s.name.replace(/^Laser hair removal, /i, ""))}<em>${s.price_usd ? "$" + s.price_usd : "free"}</em></span>`).join("")}</div>
+    </div>`).join("");
+}
+try {
+  const app = new window.McpApps.App({ name: "A3 providers", version: "0.1.0" });
+  app.ontoolresult = (r) => render(r?.structuredContent);
+  await app.connect();
+} catch (e) { list.innerHTML = '<div class="empty">Could not connect to the host.</div>'; }
+</script>
+</body>
+</html>

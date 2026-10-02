@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Alexa+ Simulator</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='3' y='13' width='26' height='6' rx='3' fill='%2322c4ff'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Figtree:wght@400;500;600;700&display=swap">
+<style>
+  :root {
+    --room:#070a10; --bezel:#0b0d12; --screen:#0d1320; --ink:#f3f6fb; --muted:#93a0b8; --line:#ffffff12;
+    --cyan:#22c4ff; --blue:#3f6bff; --violet:#7a4dff; --live:#35e0a1;
+  }
+  * { box-sizing:border-box; }
+  html, body { height:100%; }
+  body { margin:0; background:radial-gradient(1400px 700px at 50% -20%, #18233d 0%, var(--room) 62%); color:var(--ink);
+         font:16px/1.4 Figtree, system-ui, sans-serif; display:grid; place-items:center; padding:28px 16px; overflow:hidden; }
+  .device { width:min(1360px, 100%, calc((100vh - 90px) * 16 / 9)); aspect-ratio:16/9; background:var(--bezel); border-radius:30px; padding:16px;
+            box-shadow:0 40px 90px #000c, 0 0 0 1px #ffffff10 inset, 0 2px 0 #ffffff14 inset; position:relative; }
+  .device::after { content:""; position:absolute; top:7px; left:7%; width:7px; height:7px; border-radius:50%; background:#1b2130; box-shadow:0 0 0 2px #0f131b; }
+  .screen { position:relative; width:100%; height:100%; border-radius:18px; overflow:hidden; background:
+            radial-gradient(900px 500px at 85% 0%, #17264a55, transparent 70%), var(--screen);
+            display:grid; grid-template-rows:auto auto 1fr; }
+
+  /* top status bar */
+  .top { display:flex; align-items:center; justify-content:space-between; padding:16px 26px 6px; color:var(--muted); font-size:15px; }
+  .brand { display:flex; align-items:center; gap:10px; color:var(--ink); font-weight:600; letter-spacing:.2px; }
+  .brand i { width:22px; height:6px; border-radius:3px; background:linear-gradient(90deg, var(--cyan), var(--blue)); display:block; }
+  .brand small { color:var(--muted); font-weight:500; }
+  .right { display:flex; gap:18px; font-variant-numeric:tabular-nums; }
+  #clock { color:var(--ink); font-weight:600; }
+
+  /* the exchange: what you said, what Alexa said */
+  .conv { padding:6px 26px 10px; display:grid; gap:6px; min-height:0; }
+  #you { color:var(--muted); font-size:17px; min-height:24px; }
+  #you:not(:empty)::before { content:"“"; } #you:not(:empty)::after { content:"”"; }
+  #say { font-size:clamp(20px, 2.2vw, 30px); font-weight:600; line-height:1.25; letter-spacing:-.2px; max-width:60ch; text-wrap:balance; min-height:1.25em; }
+  body.rep .conv { display:none; }
+  body.rep .screen { grid-template-rows:auto 1fr; }
+
+  /* content area: home, results, representative */
+  #stage { min-height:0; padding:0 22px 74px; display:grid; }
+  #stage .view { min-height:0; width:100%; height:100%; }
+  #stage iframe { width:100%; height:100%; border:0; display:block; border-radius:16px; background:var(--screen); }
+  body.rep #stage { padding:12px 14px 66px; }
+  /* Alexa's built-in calendar: its own card, not a business window */
+  #stage .calendar { display:grid; place-items:start; padding-top:8px; }
+  .cal { background:#0b1220; border:1px solid var(--line); border-radius:18px; padding:22px 28px; min-width:420px; animation:in .3s ease; }
+  .cal-top { display:flex; align-items:center; gap:10px; color:var(--muted); font-size:15px; font-weight:600; }
+  .cal-ok { width:24px; height:24px; border-radius:50%; background:#35e0a1; color:#04140f; display:grid; place-items:center; font-weight:800; font-size:14px; }
+  .cal-title { margin-top:12px; font-size:24px; font-weight:700; color:var(--ink); }
+  .cal-when { margin-top:4px; font-size:19px; color:var(--ink); }
+  .cal-where { margin-top:2px; font-size:16px; color:var(--muted); }
+  .home { align-self:center; justify-self:start; display:grid; gap:14px; padding:0 6px; }
+  .home h1 { margin:0; font-size:clamp(40px, 5vw, 68px); font-weight:700; letter-spacing:-1.2px; }
+  .home p { margin:0; color:var(--muted); font-size:clamp(17px, 1.7vw, 22px); }
+  .home q { color:var(--ink); font-weight:600; quotes:"“" "”"; }
+
+  /* MCP trace, for judges: every call goes through the real MCP server */
+  #mcp { position:absolute; left:22px; bottom:24px; display:grid; gap:3px; font:12.5px/1.3 ui-monospace, "Cascadia Mono", Consolas, monospace; color:#9fe7c7; pointer-events:none; }
+  #mcp div { background:#05080ecc; border:1px solid #35e0a133; border-radius:8px; padding:3px 8px; width:max-content; animation:in .3s ease; }
+  #mcp div::before { content:"MCP  "; color:var(--muted); }
+  @keyframes in { from { opacity:0; transform:translateY(4px); } }
+
+  /* controls */
+  .ctrl { position:absolute; right:22px; bottom:20px; display:flex; align-items:center; gap:10px; }
+  #typed { width:min(320px, 34vw); background:#05080ecc; color:var(--ink); border:1px solid var(--line); border-radius:999px; padding:10px 16px; font:inherit; font-size:15px; opacity:.55; transition:opacity .2s; }
+  #typed:focus { opacity:1; outline:2px solid var(--cyan); outline-offset:1px; }
+  #talk { width:52px; height:52px; border-radius:50%; border:0; cursor:pointer; display:grid; place-items:center;
+          background:linear-gradient(135deg, var(--cyan), var(--blue)); box-shadow:0 6px 20px #22c4ff40; }
+  #talk svg { width:22px; height:22px; fill:#fff; }
+  #talk:focus-visible { outline:2px solid #fff; outline-offset:3px; }
+  #state { position:absolute; left:50%; bottom:22px; transform:translateX(-50%); color:var(--muted); font-size:14px; letter-spacing:.3px; }
+
+  /* the light bar along the bottom edge of the screen */
+  .bar { position:absolute; left:0; right:0; bottom:0; height:7px; opacity:0; transition:opacity .25s; }
+  body.listening .bar { opacity:1; background:var(--cyan); box-shadow:0 0 22px var(--cyan), 0 0 50px #22c4ff66; }
+  body.thinking .bar { opacity:1; background:linear-gradient(90deg, var(--blue), var(--cyan), var(--violet), var(--blue)); background-size:300% 100%; animation:flow 1.1s linear infinite; }
+  body.speaking .bar { opacity:1; background:linear-gradient(90deg, var(--violet), var(--cyan), var(--violet)); animation:breathe 1s ease-in-out infinite alternate; box-shadow:0 0 24px #3f6bff88; }
+  @keyframes flow { to { background-position:-300% 0; } }
+  @keyframes breathe { from { opacity:.55; } to { opacity:1; } }
+  @media (prefers-reduced-motion: reduce) { .bar, #mcp div { animation:none !important; } }
+
+  .note { position:fixed; bottom:8px; left:0; right:0; text-align:center; color:#5f6b80; font-size:12px; }
+</style>
+</head>
+<body>
+<div class="device">
+  <div class="screen">
+    <header class="top">
+      <div class="brand"><i></i>Alexa+ <small>simulator</small></div>
+      <div class="right"><span>Austin, TX</span><span id="clock"></span></div>
+    </header>
+    <section class="conv"><div id="you"></div><div id="say"></div></section>
+    <section id="stage">
+      <div class="home"><h1 id="greet">Good afternoon</h1><p>Try <q>Alexa, find a clinic near me for laser hair removal</q></p></div>
+    </section>
+    <div id="mcp" aria-live="polite"></div>
+    <div id="state"></div>
+    <div class="ctrl">
+      <input id="typed" placeholder="Type to Alexa" aria-label="Type to Alexa">
+      <button id="talk" aria-label="Talk to Alexa (Space)"><svg viewBox="0 0 24 24"><path d="M12 14a3 3 0 0 0 3-3V5a3 3 0 1 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11z"/></svg></button>
+    </div>
+    <div class="bar"></div>
+  </div>
+</div>
+<p class="note">Simulation of an Alexa+ experience. Alexa+ add-ons are partner-only today; every business action here goes through a real MCP server.</p>
+<script src="/sim/client.js"></script>
+</body>
+</html>

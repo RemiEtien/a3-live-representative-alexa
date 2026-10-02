@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>A³ window probe</title>
+<style>
+  :root { color-scheme: light dark; --ok:#1f8a4c; --bad:#c0392b; --wait:#8a7a1f; --line:#8884; }
+  body { margin:0; font:15px/1.4 system-ui, sans-serif; padding:12px; }
+  h1 { font-size:17px; margin:0 0 8px; }
+  table { border-collapse:collapse; width:100%; }
+  td { border-top:1px solid var(--line); padding:6px 4px; vertical-align:top; }
+  td.k { width:34%; font-weight:600; }
+  .ok { color:var(--ok); } .bad { color:var(--bad); } .wait { color:var(--wait); }
+  .row { display:flex; gap:8px; flex-wrap:wrap; margin:10px 0; }
+  button { font:inherit; padding:8px 12px; border-radius:8px; border:1px solid var(--line); cursor:pointer; }
+  video, iframe { width:48%; aspect-ratio:16/9; border:1px solid var(--line); border-radius:8px; background:#0002; }
+  .media { display:flex; gap:4%; }
+  #meter { height:8px; background:var(--ok); width:0; transition:width .1s; border-radius:4px; }
+</style>
+</head>
+<body>
+<h1>A³ window probe</h1>
+<table id="t"></table>
+<div class="row">
+  <button id="bSound">Test sound (tap)</button>
+  <button id="bMic">Test microphone (tap)</button>
+  <button id="bSend">Send report</button>
+</div>
+<div id="meter"></div>
+<div class="media">
+  <video id="vid" src="__PUBLIC_URL__/media/test.mp4" playsinline muted loop></video>
+  <iframe id="frm" src="__FRAME_URL__/demo" allow="microphone; autoplay"></iframe>
+</div>
+
+<script>
+/*__LIB__*/
+</script>
+<script type="module">
+const R = {};
+const rows = {};
+const t = document.getElementById("t");
+function set(key, label, state, text) {
+  R[key] = { state, text };
+  if (!rows[key]) {
+    const tr = document.createElement("tr");
+    tr.innerHTML = `<td class="k"></td><td></td>`;
+    t.appendChild(tr);
+    rows[key] = tr;
+  }
+  rows[key].children[0].textContent = label;
+  const td = rows[key].children[1];
+  td.className = state;
+  td.textContent = (state === "ok" ? "✓ " : state === "bad" ? "✗ " : "… ") + text;
+}
+const err = (e) => (e && (e.name ? e.name + ": " : "") + (e.message || String(e))) || "unknown";
+
+let app;
+try {
+  app = new window.McpApps.App({ name: "A3 window probe", version: "0.1.0" });
+  app.onerror = (e) => set("bridge", "Host bridge", "bad", err(e));
+  await app.connect();
+  const ctx = app.getHostContext?.() ?? {};
+  const host = app.getHostVersion?.() ?? {};
+  set("bridge", "Host bridge", "ok", `${host.name ?? "?"} ${host.version ?? ""} · platform ${ctx.platform ?? "?"} · mode ${ctx.displayMode ?? "?"}`);
+  const caps = app.getHostCapabilities?.() ?? {};
+  set("caps", "Host capabilities", "ok", JSON.stringify(caps).slice(0, 400));
+} catch (e) {
+  set("bridge", "Host bridge", "bad", err(e));
+}
+
+set("origin", "Origin / UA", "ok", `${location.origin} · ${navigator.userAgent}`);
+set("pp", "Permissions-Policy", "ok",
+  document.featurePolicy ? `mic=${document.featurePolicy.allowsFeature("microphone")} cam=${document.featurePolicy.allowsFeature("camera")} autoplay=${document.featurePolicy.allowsFeature("autoplay")}` : "featurePolicy API absent");
+
+// fetch
+try {
+  const r = await fetch("__PUBLIC_URL__/ping");
+  set("fetch", "fetch to our server", r.ok ? "ok" : "bad", `HTTP ${r.status}`);
+} catch (e) { set("fetch", "fetch to our server", "bad", err(e)); }
+
+// WebSocket
+await new Promise((done) => {
+  try {
+    const ws = new WebSocket("__WS_URL__/ws");
+    const t0 = performance.now();
+    const timer = setTimeout(() => { set("ws", "WebSocket", "bad", "timeout 6s"); done(); }, 6000);
+    ws.onopen = () => ws.send("ping");
+    ws.onmessage = () => { clearTimeout(timer); set("ws", "WebSocket", "ok", `echo in ${Math.round(performance.now() - t0)} ms`); ws.close(); done(); };
+    ws.onerror = () => { clearTimeout(timer); set("ws", "WebSocket", "bad", "error event"); done(); };
+  } catch (e) { set("ws", "WebSocket", "bad", err(e)); done(); }
+});
+
+// Video: muted autoplay, then try with sound without a tap
+const vid = document.getElementById("vid");
+try {
+  await vid.play();
+  set("vmuted", "Video, muted autoplay", "ok", "playing");
+} catch (e) { set("vmuted", "Video, muted autoplay", "bad", err(e)); }
+try {
+  vid.muted = false;
+  await vid.play();
+  set("vsound", "Video with sound, no tap", "ok", "playing with sound");
+} catch (e) {
+  vid.muted = true; vid.play().catch(() => {});
+  set("vsound", "Video with sound, no tap", "bad", err(e));
+}
+
+// Audio context without a tap
+try {
+  const ac = new AudioContext();
+  set("ac", "Audio, no tap", ac.state === "running" ? "ok" : "bad", `AudioContext ${ac.state}`);
+  ac.close();
+} catch (e) { set("ac", "Audio, no tap", "bad", err(e)); }
+
+// WebRTC: peer connection + ICE gathering
+await new Promise((done) => {
+  try {
+    const pc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
+    const types = new Set();
+    const timer = setTimeout(() => finish(), 5000);
+    function finish() {
+      clearTimeout(timer);
+      set("rtc", "WebRTC", types.size ? "ok" : "bad", types.size ? `ICE candidates: ${[...types].join(", ")}` : "no ICE candidates");
+      pc.close(); done();
+    }
+    pc.onicecandidate = (ev) => { if (ev.candidate) types.add(ev.candidate.type || "?"); else finish(); };
+    pc.createDataChannel("probe");
+    pc.createOffer().then((o) => pc.setLocalDescription(o)).catch((e) => { set("rtc", "WebRTC", "bad", err(e)); clearTimeout(timer); done(); });
+  } catch (e) { set("rtc", "WebRTC", "bad", err(e)); done(); }
+});
+
+// Nested iframe
+const frm = document.getElementById("frm");
+set("frame", "Embedded page (app.triplea.studio)", "wait", "loading…");
+frm.addEventListener("load", () => set("frame", "Embedded page (app.triplea.studio)", "ok", "load event fired (look at the right box: page or blank?)"));
+setTimeout(() => { if (R.frame.state === "wait") set("frame", "Embedded page (app.triplea.studio)", "bad", "no load event in 8s"); }, 8000);
+
+// Microphone without a tap
+async function mic(label) {
+  try {
+    const s = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const ac = new AudioContext();
+    const an = ac.createAnalyser();
+    ac.createMediaStreamSource(s).connect(an);
+    const buf = new Uint8Array(an.fftSize);
+    let peak = 0;
+    const meter = document.getElementById("meter");
+    const t0 = performance.now();
+    await new Promise((r) => {
+      (function tick() {
+        an.getByteTimeDomainData(buf);
+        let m = 0; for (const v of buf) m = Math.max(m, Math.abs(v - 128));
+        peak = Math.max(peak, m);
+        meter.style.width = Math.min(100, m) + "%";
+        if (performance.now() - t0 < 3000) requestAnimationFrame(tick); else r();
+      })();
+    });
+    s.getTracks().forEach((x) => x.stop()); ac.close();
+    set("mic", "Microphone", "ok", `${label}: granted, peak level ${peak}/128 over 3 s (speak to see it move)`);
+  } catch (e) { set("mic", "Microphone", "bad", `${label}: ${err(e)}`); }
+}
+if (navigator.mediaDevices?.getUserMedia) await mic("no tap");
+else set("mic", "Microphone", "bad", "navigator.mediaDevices absent");
+
+document.getElementById("bMic").onclick = () => mic("after tap");
+document.getElementById("bSound").onclick = async () => {
+  try {
+    const ac = new AudioContext();
+    const o = ac.createOscillator(); o.frequency.value = 660; o.connect(ac.destination); o.start(); o.stop(ac.currentTime + 0.4);
+    vid.muted = false; await vid.play();
+    set("tap", "Sound after tap", "ok", `AudioContext ${ac.state}, video unmuted (did you hear a beep and the voice?)`);
+  } catch (e) { set("tap", "Sound after tap", "bad", err(e)); }
+  send();
+};
+
+async function send() {
+  try {
+    await fetch("__PUBLIC_URL__/report", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(R) });
+    set("sent", "Report", "ok", "sent " + new Date().toLocaleTimeString());
+  } catch (e) { set("sent", "Report", "bad", err(e)); }
+  try { await app?.sendLog?.({ level: "info", data: JSON.stringify(R) }); } catch {}
+}
+document.getElementById("bSend").onclick = send;
+setTimeout(send, 9000);
+</script>
+</body>
+</html>

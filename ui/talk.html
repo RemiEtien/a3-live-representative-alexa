@@ -1,0 +1,352 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Live representative</title>
+<style>
+  :root { --bg:#14161a; --ink:#f2f3f5; --muted:#9aa0aa; --accent:#7c5cff; --bad:#ff6b5b; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.4 system-ui, sans-serif; }
+  .stage { position:relative; aspect-ratio:16/9; width:min(100%, calc((100vh - 64px) * 16 / 9)); margin:0 auto; background:#000; overflow:hidden; border-radius:10px; }
+  canvas { width:100%; height:100%; display:block; object-fit:contain; }
+  .cover { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:12px; background:#000c; }
+  .cover p { margin:0; color:var(--muted); text-align:center; padding:0 16px; }
+  .sub { position:absolute; left:4%; right:4%; bottom:4%; text-align:center; font-size:17px; text-shadow:0 1px 3px #000; }
+  .card { position:absolute; top:4%; right:3%; max-width:42%; background:#111b; backdrop-filter:blur(6px); border:1px solid #fff3; border-radius:10px; padding:10px 12px; font-size:14px; }
+  .card b { display:block; margin-bottom:4px; }
+  .bar { display:flex; gap:8px; align-items:center; padding:10px 2px; }
+  button { font:inherit; padding:9px 16px; border-radius:999px; border:1px solid #fff3; background:#ffffff14; color:var(--ink); cursor:pointer; }
+  button.primary { background:var(--accent); border-color:var(--accent); font-weight:600; font-size:17px; padding:12px 26px; }
+  button:focus-visible { outline:2px solid #fff; outline-offset:2px; }
+  #status { color:var(--muted); font-size:13px; margin-left:auto; }
+  #you { color:var(--muted); font-size:13px; padding:0 2px 6px; min-height:18px; }
+  [hidden] { display:none !important; }
+</style>
+</head>
+<body>
+<div class="stage">
+  <canvas id="cv" width="1280" height="720"></canvas>
+  <video id="lkv" muted autoplay playsinline hidden style="position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#000"></video>
+  <audio id="lka" autoplay></audio>
+  <div class="sub" id="sub"></div>
+  <div class="card" id="card" hidden></div>
+  <div class="cover" id="cover">
+    <button class="primary" id="bStart">Start conversation</button>
+    <p id="who">Live video with the business's representative. Your microphone is used only during the conversation.</p>
+  </div>
+</div>
+<div class="bar">
+  <button id="bMute" hidden>Mute</button>
+  <button id="bEnd" hidden>End</button>
+  <span id="status">ready</span>
+</div>
+<div id="you"></div>
+
+<script>
+/*__LIB__*/
+</script>
+<script>
+/*__LIVEKIT__*/
+</script>
+<script type="module">
+const $ = (id) => document.getElementById(id);
+const status = (t) => { $("status").textContent = t; };
+const log = [];
+const t0 = performance.now();
+const note = (k, v) => { log.push({ t: Math.round(performance.now() - t0), k, v }); };
+
+let language = "en", providerId = "juniper-vale", autostart = false, moduleReady = false;
+let app;
+try {
+  app = new window.McpApps.App({ name: "A3 representative", version: "0.1.0" });
+  app.ontoolinput = (p) => {
+    const a = p?.arguments || {};
+    if (a.language) language = a.language;
+    if (a.provider_id) providerId = a.provider_id;
+    if (a.autostart) { autostart = true; if (moduleReady) startConversation(); }
+  };
+  app.ontoolresult = (r) => {
+    const s = r?.structuredContent;
+    if (s?.provider_name) $("who").textContent = `Live video with ${s.rep_name} from ${s.provider_name}. Your microphone is used only during the conversation.`;
+  };
+  await app.connect();
+} catch (e) { note("bridge_error", String(e)); }
+
+// ---------- audio out: PCM16 LE base64, scheduled gapless ----------
+let outCtx = null, nextStart = 0;
+const sources = new Set();
+const LOOKAHEAD = 0.25;
+function b64ToBytes(b64) { const s = atob(b64); const u = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) u[i] = s.charCodeAt(i); return u; }
+function playPcm(b64, rate) {
+  const bytes = b64ToBytes(b64);
+  const n = bytes.length >> 1;
+  if (!n) return null;
+  const dv = new DataView(bytes.buffer);
+  const buf = outCtx.createBuffer(1, n, rate);
+  const ch = buf.getChannelData(0);
+  for (let i = 0; i < n; i++) ch[i] = dv.getInt16(i * 2, true) / 32768;
+  const now = outCtx.currentTime;
+  if (nextStart < now) nextStart = now + LOOKAHEAD;
+  const src = outCtx.createBufferSource();
+  src.buffer = buf; src.connect(outCtx.destination); src.start(nextStart);
+  sources.add(src); src.onended = () => sources.delete(src);
+  const at = nextStart;
+  nextStart += buf.duration;
+  return at;
+}
+function stopAudio() { for (const s of sources) { try { s.stop(); } catch {} } sources.clear(); nextStart = 0; }
+
+// ---------- video: H.264 Annex-B, [1 byte keyflag][NAL] per frame ----------
+let decoder = null, decW = 0, decH = 0, needKey = true, pts = 0;
+const showAt = new Map();      // pts -> AudioContext time to show the frame
+const frames = [];             // decoded VideoFrames waiting to be drawn
+const cv = $("cv"), g = cv.getContext("2d");
+let firstFrameNoted = false;
+function ensureDecoder(w, h) {
+  if (decoder && decW === w && decH === h && decoder.state === "configured") return;
+  try { decoder?.close(); } catch {}
+  decoder = new VideoDecoder({
+    output: (f) => { while (frames.length >= 15) { try { frames.shift().close(); } catch {} } frames.push(f); },
+    error: (e) => { needKey = true; note("decode_error", e.message); },
+  });
+  decoder.configure({ codec: "avc1.42E01F", codedWidth: w, codedHeight: h, optimizeForLatency: true });
+  decW = w; decH = h; needKey = true;
+  if (cv.width !== w) { cv.width = w; cv.height = h; }
+}
+function decodeBatch(framesB64, w, h, startAt) {
+  ensureDecoder(w, h);
+  let i = 0;
+  for (const f64 of framesB64) {
+    const buf = b64ToBytes(f64);
+    if (buf.length < 2) continue;
+    const isKey = buf[0] === 0x01;
+    if (needKey) { if (!isKey) continue; needKey = false; }
+    if (decoder.decodeQueueSize > 30 && !isKey) { needKey = true; continue; }
+    const ts = pts * 40000;
+    showAt.set(ts, startAt + i * 0.04);
+    pts++; i++;
+    try { decoder.decode(new EncodedVideoChunk({ type: isKey ? "key" : "delta", timestamp: ts, data: buf.subarray(1) })); }
+    catch (e) { needKey = true; note("decode_throw", String(e)); }
+  }
+}
+let idleClock = 0;
+function render() {
+  if (outCtx && frames.length) {
+    const now = outCtx.currentTime;
+    let pick = null;
+    while (frames.length) {
+      const f = frames[0];
+      const when = showAt.get(f.timestamp) ?? now;
+      if (when > now + 0.005) break;
+      frames.shift();
+      showAt.delete(f.timestamp);
+      if (pick) pick.close();
+      pick = f;
+    }
+    if (pick) {
+      g.drawImage(pick, 0, 0, cv.width, cv.height);
+      pick.close();
+      if (!firstFrameNoted) { firstFrameNoted = true; note("first_frame", ""); status("live"); }
+    }
+  }
+  requestAnimationFrame(render);
+}
+requestAnimationFrame(render);
+
+// ---------- turn timing: end of your speech -> transcript -> reply text -> her voice ----------
+const VAD_ON = 0.015, VAD_HANG_MS = 400, HER_ON = 0.02;
+const turn = { speaking: false, lastLoud: 0, end: 0, transcript: null, text: null, voice: null, n: 0 };
+let lastCb = 0, maxGap = 0, maxBuffered = 0;
+function sinceEnd() { return turn.end ? Math.round(performance.now() - turn.end) : null; }
+function closeTurn() {
+  if (!turn.end) return;
+  note("turn", JSON.stringify({ n: turn.n, transcript_ms: turn.transcript, text_ms: turn.text, voice_ms: turn.voice,
+    mic_max_gap_ms: Math.round(maxGap), ws_max_buffered: maxBuffered }));
+  turn.end = 0; maxGap = 0; maxBuffered = 0;
+  report();
+}
+function micLevel(x) {
+  let s = 0; for (let i = 0; i < x.length; i++) s += x[i] * x[i];
+  const rms = Math.sqrt(s / x.length), now = performance.now();
+  if (lastCb) maxGap = Math.max(maxGap, now - lastCb);
+  lastCb = now;
+  if (ws) maxBuffered = Math.max(maxBuffered, ws.bufferedAmount);
+  if (rms >= VAD_ON) {
+    if (!turn.speaking) { if (turn.end) closeTurn(); turn.speaking = true; }
+    turn.lastLoud = now;
+  } else if (turn.speaking && now - turn.lastLoud > VAD_HANG_MS) {
+    turn.speaking = false; turn.n++;
+    turn.end = turn.lastLoud; turn.transcript = turn.text = turn.voice = null;
+  }
+}
+// her voice: level of the LiveKit audio track
+function watchHerVoice(track) {
+  try {
+    const an = outCtx.createAnalyser(); an.fftSize = 512;
+    outCtx.createMediaStreamSource(new MediaStream([track.mediaStreamTrack])).connect(an);
+    const buf = new Float32Array(an.fftSize);
+    setInterval(() => {
+      an.getFloatTimeDomainData(buf);
+      let s = 0; for (let i = 0; i < buf.length; i++) s += buf[i] * buf[i];
+      if (Math.sqrt(s / buf.length) >= HER_ON && turn.end && turn.voice === null) { turn.voice = sinceEnd(); closeTurn(); }
+    }, 20);
+  } catch (e) { note("her_meter_error", String(e)); }
+}
+
+// ---------- mic up: 16 kHz PCM16 LE base64 every 512 samples ----------
+let micCtx = null, micStream = null, muted = false;
+async function startMic(send) {
+  micStream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+  micCtx = new AudioContext({ sampleRate: 16000 });
+  if (micCtx.state !== "running") await micCtx.resume();
+  const src = micCtx.createMediaStreamSource(micStream);
+  const proc = micCtx.createScriptProcessor(512, 1, 1);
+  proc.onaudioprocess = (e) => {
+    if (muted) return;
+    const x = e.inputBuffer.getChannelData(0);
+    micLevel(x);
+    const i16 = new Int16Array(x.length);
+    for (let i = 0; i < x.length; i++) { const s = Math.max(-1, Math.min(1, x[i])); i16[i] = s < 0 ? s * 0x8000 : s * 0x7fff; }
+    const u8 = new Uint8Array(i16.buffer);
+    let bin = ""; for (let i = 0; i < u8.length; i++) bin += String.fromCharCode(u8[i]);
+    send({ type: "audio", audio: btoa(bin) });
+  };
+  src.connect(proc); proc.connect(micCtx.destination);
+}
+
+// ---------- cards from content_update ----------
+function showCard(d) {
+  const key = Object.keys(d).find((k) => k.endsWith("_data") && d[k] && typeof d[k] === "object");
+  const data = key ? d[key] : {};
+  const title = data.title || data.name || data.headline || d.content_type || "";
+  const lines = Object.entries(data).filter(([k, v]) => typeof v === "string" || typeof v === "number")
+    .filter(([k]) => !["title", "name", "headline", "image", "image_url", "url", "id", "slide_id"].includes(k)).slice(0, 4);
+  $("card").innerHTML = "";
+  const b = document.createElement("b"); b.textContent = title; $("card").appendChild(b);
+  for (const [, v] of lines) { const p = document.createElement("div"); p.textContent = String(v).slice(0, 140); $("card").appendChild(p); }
+  $("card").hidden = false;
+}
+
+// ---------- LiveKit: avatar video + voice (Ditto workers publish only here) ----------
+let room = null, lkVideo = null, lkAudio = null, avReadySent = false;
+async function joinLiveKit(url, token) {
+  const LK = window.LivekitClient;
+  if (!LK) { note("lk_missing", ""); return; }
+  room = new LK.Room({ adaptiveStream: false, dynacast: false });
+  room.on(LK.RoomEvent.TrackSubscribed, (track) => {
+    try { if (track.receiver) { track.receiver.jitterBufferTarget = 150; } } catch {}
+    if (track.kind === "video") { lkVideo = track; track.attach($("lkv")); $("lkv").hidden = false; note("lk_video", ""); }
+    else if (track.kind === "audio") { lkAudio = track; track.attach($("lka")); note("lk_audio", ""); watchHerVoice(track); }
+    if (lkVideo && lkAudio && !avReadySent) { avReadySent = true; send({ type: "av_ready", video: true, audio: true }); status("live"); }
+  });
+  room.on(LK.RoomEvent.AudioPlaybackStatusChanged, () => {
+    if (!room.canPlaybackAudio) { status("tap Unmute to hear the representative"); $("bMute").textContent = "Unmute sound"; soundBlocked = true; }
+  });
+  room.on(LK.RoomEvent.Disconnected, (r) => note("lk_disconnected", String(r)));
+  await room.connect(url, token);
+  note("lk_connected", "");
+  try { await room.startAudio(); } catch (e) { note("lk_startAudio", String(e)); }
+}
+let soundBlocked = false;
+
+// ---------- session ----------
+const CLOSE_TEXT = {
+  1013: "All representatives are busy right now. Try again in a minute.",
+  4050: "Demo time limit reached. Start a new conversation to continue.",
+  1008: "Connection refused by the avatar service (origin).",
+  4040: "This business is not set up.", 4041: "This business is paused.",
+  4042: "This business has reached its limit.", 4043: "This business's plan does not include live video.",
+};
+let ws = null;
+function send(obj) { if (ws?.readyState === 1) ws.send(JSON.stringify(obj)); }
+
+// A voice host (the Alexa simulator, an Echo Show) passes autostart: it already has the user's gesture,
+// delegates autoplay to this frame, and listens itself. Chat hosts keep the Start button.
+let started = false;
+$("bStart").onclick = () => startConversation();
+async function startConversation() {
+  if (started) return;
+  started = true;
+  $("bStart").disabled = true;
+  status("connecting…");
+  if (autostart) {
+    // The voice host owns the controls ("Alexa, goodbye" ends the call): no buttons, no own background.
+    $("cover").querySelector("p").textContent = "Connecting…"; $("bStart").hidden = true;
+    document.querySelector(".bar").hidden = true; $("you").hidden = true;
+    document.body.style.background = "transparent";
+  }
+  try {
+    outCtx = new AudioContext({ latencyHint: "interactive" });
+    if (outCtx.state !== "running") await outCtx.resume();
+  } catch (e) { note("out_ctx", String(e)); }
+  ws = new WebSocket("__WS_URL__/avatar?language=" + encodeURIComponent(language) + "&provider=" + encodeURIComponent(providerId));
+  ws.onopen = async () => {
+    note("ws_open", "");
+    send({ type: "set_project", project_id: null, user_id: null, initial_idea: null, is_resuming: false,
+           browser_language: navigator.language, user_language: language, stage: "ambassador" });
+    send({ type: "start_live" });
+    if (autostart) { status("listening through your assistant"); }
+    else try { await startMic(send); note("mic_on", ""); }
+    // A voice host (Alexa, Echo Show) does not give the window its microphone: it listens itself and sends questions via ask_representative.
+    catch (e) { note("mic_error", e.name + ": " + e.message); status("listening through your assistant"); }
+    $("cover").hidden = true; $("bMute").hidden = false; $("bEnd").hidden = false;
+    status("waiting for the representative…");
+  };
+  ws.onmessage = (ev) => {
+    let d; try { d = JSON.parse(ev.data); } catch { return; }
+    switch (d.type) {
+      case "musetalk_sync": {
+        let at = null;
+        if (d.audio_b64) at = playPcm(d.audio_b64, d.audio_sample_rate || 24000);
+        if (at === null) { const now = outCtx.currentTime; idleClock = Math.max(idleClock, now + 0.05); at = idleClock; idleClock += (d.frames_b64?.length || 0) * 0.04; }
+        if (d.frames_b64?.length) decodeBatch(d.frames_b64, d.video_w || 1280, d.video_h || 720, at);
+        break;
+      }
+      case "livekit_config":
+        if (!room && d.url && d.token) joinLiveKit(d.url, d.token).catch((e) => { note("lk_error", e?.message || String(e)); status("video connection failed: " + (e?.message || e)); });
+        break;
+      case "text_chunk": $("sub").textContent = d.text || ""; if (turn.end && turn.text === null) turn.text = sinceEnd(); break;
+      case "user_transcript": if (!d.is_placeholder) { $("you").textContent = "You: " + (d.text || ""); if (turn.end && turn.transcript === null) turn.transcript = sinceEnd(); } break;
+      case "interrupted": stopAudio(); break;
+      case "content_update": if (d.action === "show") showCard(d); else if (d.action === "hide") $("card").hidden = true; break;
+      case "worker_busy": status(CLOSE_TEXT[1013]); note("worker_busy", d.message || ""); break;
+      case "error": status("error: " + (d.message || "")); note("server_error", d.message || ""); break;
+      case "session_timeout": status("session ended (" + d.reason + ")"); break;
+      case "init": case "live_mode_ack": case "ping": case "agent_state": case "turn_complete": case "stream_end": break;
+      default: note("msg", d.type);
+    }
+  };
+  ws.onclose = (ev) => {
+    note("ws_close", ev.code + " " + ev.reason);
+    status(CLOSE_TEXT[ev.code] || ("conversation ended (" + ev.code + ")"));
+    cleanup(false);
+  };
+};
+
+function cleanup(closeWs) {
+  if (closeWs && ws && ws.readyState <= 1) ws.close(1000);
+  try { micStream?.getTracks().forEach((t) => t.stop()); } catch {}
+  try { if (micCtx && micCtx.state !== "closed") micCtx.close(); } catch {}
+  stopAudio();
+  try { room?.disconnect(); } catch {}
+  $("bMute").hidden = true; $("bEnd").hidden = true;
+  report();
+}
+$("bEnd").onclick = () => cleanup(true);
+$("bMute").onclick = async () => {
+  if (soundBlocked && room) { try { await room.startAudio(); soundBlocked = false; $("bMute").textContent = "Mute"; status("live"); } catch {} return; }
+  muted = !muted; $("bMute").textContent = muted ? "Unmute" : "Mute";
+};
+
+async function report() {
+  try { await fetch("__PUBLIC_URL__/report", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ talk: log }) }); } catch {}
+}
+setInterval(() => { if (ws && ws.readyState === 1) report(); }, 15000);
+// The host may remove this view at any moment (Esc, "goodbye"): say goodbye properly so the A³ slot
+// and the LiveKit room are released at once, not after a timeout.
+window.addEventListener("pagehide", () => { if (ws && ws.readyState <= 1) cleanup(true); });
+moduleReady = true;
+if (autostart) startConversation();
+</script>
+</body>
+</html>

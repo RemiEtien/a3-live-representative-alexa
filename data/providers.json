@@ -1,0 +1,73 @@
+{
+  "_note": "Fictional demo businesses for the Amazon Alexa+ hackathon. Names, addresses, prices and reviews are invented.",
+  "city": "Austin, TX",
+  "providers": [
+    {
+      "id": "juniper-vale",
+      "name": "Juniper and Vale Aesthetics",
+      "tagline": "Laser hair removal and skin care, South Congress",
+      "address": "1418 Juniper Row, Austin, TX 78704",
+      "distance_mi": 1.2,
+      "rating": 4.8,
+      "reviews": 412,
+      "hours": "Mon-Sat 9:00-19:00",
+      "live_rep": true,
+      "rep_name": "Hannah",
+      "avatar_id": "hannah_v1",
+      "rep_photo": "/media/reps/hannah.webp",
+      "tenant": "uid:demo-juniper-vale",
+      "services": [
+        { "id": "lhr-underarm", "name": "Laser hair removal, underarms", "price_usd": 89, "minutes": 15, "tags": ["laser hair removal", "laser"] },
+        { "id": "lhr-legs", "name": "Laser hair removal, full legs", "price_usd": 289, "minutes": 45, "tags": ["laser hair removal", "laser"] },
+        { "id": "lhr-bikini", "name": "Laser hair removal, bikini line", "price_usd": 129, "minutes": 20, "tags": ["laser hair removal", "laser"] },
+        { "id": "consult", "name": "Free skin and laser consultation", "price_usd": 0, "minutes": 20, "tags": ["consultation"] },
+        { "id": "hydrafacial", "name": "HydraFacial", "price_usd": 179, "minutes": 50, "tags": ["facial", "skin care"] }
+      ],
+      "faq": [
+        "Laser hair removal usually takes 6 to 8 sessions, 4 to 6 weeks apart.",
+        "The first consultation includes a skin type check and a test patch, and it is free.",
+        "Packages of 6 sessions are 20 percent off.",
+        "We use a diode laser that works for light and medium skin tones and an Nd:YAG laser for darker skin tones."
+      ]
+    },
+    {
+      "id": "pecan-street",
+      "name": "Pecan Street Laser Studio",
+      "tagline": "Laser clinic downtown, evenings available",
+      "address": "602 Pecan Street, Austin, TX 78701",
+      "distance_mi": 2.6,
+      "rating": 4.6,
+      "reviews": 238,
+      "hours": "Mon-Fri 11:00-21:00",
+      "live_rep": false,
+      "services": [
+        { "id": "lhr-underarm", "name": "Laser hair removal, underarms", "price_usd": 79, "minutes": 15, "tags": ["laser hair removal", "laser"] },
+        { "id": "lhr-face", "name": "Laser hair removal, upper lip and chin", "price_usd": 69, "minutes": 15, "tags": ["laser hair removal", "laser"] },
+        { "id": "ipl", "name": "IPL photofacial", "price_usd": 249, "minutes": 40, "tags": ["skin care", "laser"] }
+      ],
+      "faq": ["Evening appointments until 9 pm on weekdays."]
+    },
+    {
+      "id": "barton-glow",
+      "name": "Barton Glow MedSpa",
+      "tagline": "Injectables and laser, Barton Hills",
+      "address": "2210 Barton Glow Lane, Austin, TX 78746",
+      "distance_mi": 4.1,
+      "rating": 4.9,
+      "reviews": 167,
+      "hours": "Tue-Sat 10:00-18:00",
+      "live_rep": true,
+      "rep_name": "Sophia",
+      "avatar_id": "sophia_v1",
+      "rep_photo": "/media/reps/sophia.webp",
+      "tenant": "uid:demo-barton-glow",
+      "services": [
+        { "id": "botox", "name": "Botox, per unit", "price_usd": 13, "minutes": 30, "tags": ["injectables", "botox"] },
+        { "id": "filler", "name": "Lip filler, 1 syringe", "price_usd": 650, "minutes": 45, "tags": ["injectables", "filler"] },
+        { "id": "lhr-legs", "name": "Laser hair removal, full legs", "price_usd": 320, "minutes": 45, "tags": ["laser hair removal", "laser"] },
+        { "id": "consult", "name": "Consultation with a nurse injector", "price_usd": 0, "minutes": 20, "tags": ["consultation"] }
+      ],
+      "faq": ["All injectables are done by a registered nurse.", "Free touch-up within 2 weeks after Botox."]
+    }
+  ]
+}

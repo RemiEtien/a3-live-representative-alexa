@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Appointment</title>
+<style>
+  :root { --bg:#14161a; --card:#1d2026; --ink:#f2f3f5; --muted:#9aa0aa; --ok:#3ddc97; --line:#ffffff1a; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.45 system-ui, sans-serif; padding:10px; }
+  .card { background:var(--card); border:1px solid #3ddc9755; border-radius:12px; padding:14px 16px; display:grid; gap:8px; max-width:520px; }
+  .head { display:flex; align-items:center; gap:8px; font-weight:650; font-size:16px; }
+  .head::before { content:"✓"; display:inline-grid; place-items:center; width:22px; height:22px; border-radius:50%; background:var(--ok); color:#0b1a12; font-size:14px; }
+  dl { display:grid; grid-template-columns:auto 1fr; gap:4px 14px; margin:0; }
+  dt { color:var(--muted); font-size:13px; } dd { margin:0; font-variant-numeric:tabular-nums; }
+  .foot { color:var(--muted); font-size:11px; }
+</style>
+</head>
+<body>
+<div class="card" id="card"><div class="foot">Booking…</div></div>
+<script>
+/*__LIB__*/
+</script>
+<script type="module">
+const card = document.getElementById("card");
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+function render(b) {
+  if (!b?.confirmation) { card.innerHTML = `<div class="foot">${esc(b?.error || "Booking failed.")}</div>`; return; }
+  card.innerHTML = `
+    <div class="head">Appointment requested</div>
+    <dl>
+      <dt>Clinic</dt><dd>${esc(b.provider_name)}</dd>
+      <dt>Service</dt><dd>${esc(b.service_name)}${b.price_usd ? " · $" + b.price_usd : " · free"}</dd>
+      <dt>When</dt><dd>${esc(b.when)}</dd>
+      <dt>Name</dt><dd>${esc(b.customer_name)}</dd>
+      <dt>Confirmation</dt><dd>${esc(b.confirmation)}</dd>
+    </dl>
+    <div class="foot">${esc(b.address)} · Demo booking, no real appointment is created.</div>`;
+}
+try {
+  const app = new window.McpApps.App({ name: "A3 booking", version: "0.1.0" });
+  app.ontoolresult = (r) => render(r?.structuredContent);
+  await app.connect();
+} catch (e) { card.innerHTML = '<div class="foot">Could not connect to the host.</div>'; }
+</script>
+</body>
+</html>
