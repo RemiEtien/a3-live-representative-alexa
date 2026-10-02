@@ -433,7 +433,8 @@ app.use("/media/reps", express.static(path.join(ROOT, "media", "reps")));
 if (!PUBLIC_MODE) app.use("/media", express.static(path.join(ROOT, "media")));
 // Root: the simulator for judges; locally the mic check, so on an Echo Show only the bare host has to be typed.
 app.get("/", (_req: Request, res: Response) =>
-  PUBLIC_MODE ? res.redirect("/sim") : res.sendFile(path.join(ROOT, "media", "mic.html")));
+  PUBLIC_MODE || !fs.existsSync(path.join(ROOT, "media", "mic.html"))
+    ? res.redirect("/sim") : res.sendFile(path.join(ROOT, "media", "mic.html")));
 
 const httpServer = app.listen(PORT, () => {
   console.log(`probe on http://localhost:${PORT}/mcp, public ${PUBLIC_URL}/mcp`);
