@@ -36,6 +36,7 @@ Built from October 1, 2026, on Windows 11 and an Echo Show (Alexa+ enabled on th
 
 - **Severity:** medium
 - **Task:** connect the view to our existing real-time avatar service over WebSocket.
+- **Steps:** read the Alexa+ layout and rendering page on how views are hosted; compared it with our avatar service's `Origin` check; in another MCP Apps host, ran a probe view that opened a WebSocket to our server and tried to embed our existing web player as a nested iframe.
 - **Expected:** the view's origin is declared or predictable, so the backend can allow it.
 - **Actual:** the docs specify a sandboxed iframe with an opaque origin (`Origin: null`), and only `connectDomains` and `resourceDomains` in the CSP; nested frames are not mentioned (a nested iframe did not load in our tests in another host). A backend that checks `Origin` must either accept `null` (which any page can send) or reject the add-on.
 - **Workaround:** the MCP server relays the WebSocket and sets the session parameters on the server side, so the view never holds them. This moves the trust decision to our server rather than solving it: the relay itself accepts any origin, so it has to limit concurrent conversations, their length, and request rates.
@@ -45,6 +46,8 @@ Built from October 1, 2026, on Windows 11 and an Echo Show (Alexa+ enabled on th
 
 - **Severity:** low
 - **Task:** decide who books: the assistant or the business's own agent.
+- **Steps:** searched the Alexa+ add-on documentation for how an add-on returns a result (a booking) to Alexa and how it may receive the signed-in user's details.
+- **Expected:** a documented pattern for handing an event back to Alexa's calendar, and a consent flow for sharing the user's name and phone.
 - **Actual:** no guidance on how an add-on should hand results back to Alexa's own features (calendar, reminders, shopping list), or how a user profile may be shared with an add-on with consent.
 - **Workaround:** `get_representative_booking` returns the confirmed booking, and the simulator's Alexa adds it to a stand-in calendar; a fixed demo profile is passed once, with the user's words.
 - **Suggestion:** document a consent flow for sharing the user's name and phone with an add-on, and a standard result shape (event, order) that Alexa can save into its own features.
